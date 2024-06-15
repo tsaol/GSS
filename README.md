@@ -1,7 +1,3 @@
-<p align="center">
-  <img alt="GSS Logo" src="https://raw.githubusercontent.com/gss-org/gss/master/docs/source/images/gss-logo.png" width="400px">
-</p>
-
 # GPU Spot Scheduler (GSS)
 
 <p align="center">
@@ -14,16 +10,13 @@
   <a href="https://github.com/gss-org/gss/blob/master/LICENSE" target="_blank">
     <img src="https://img.shields.io/github/license/gss-org/gss" alt="License" />
   </a>
-  <a href="https://slack.gss.co" target="_blank">
-    <img src="https://img.shields.io/badge/slack-join_chat-white.svg?logo=slack&style=social" alt="Slack" />
-  </a>
 </p>
 
 <p align="center">
-  <b>LLM Inference and AI Workloads on AWS Spot GPUs</b>
+  <b> LLM Inference on AWS GPU Spot Instances</b>
 </p>
 
-GSS is a framework for efficient and cost-effective deployment of large language models (LLMs) and AI workloads on AWS spot GPU instances. Built upon [SkyPilot](https://github.com/skypilot-org/skypilot) v0.6, GSS inherits its powerful job orchestration capabilities.
+GSS is a framework for efficient and cost-effective deployment of large language models (LLMs) aon AWS spot GPU instances. Base on [SkyPilot](https://github.com/skypilot-org/skypilot) v0.6, GSS inherits its powerful job orchestration capabilities.
 
 ## 🚀 Features
 
@@ -80,9 +73,6 @@ gss launch endpoint.yaml
 
 GSS seamlessly integrates with AWS, enabling you to deploy LLM inference workloads on cost-effective spot GPU instances.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/gss-org/gss/master/docs/source/images/aws-logo.png" alt="AWS Integration" width="200px">
-</p>
 
 ## 🤝 Contributing
 
@@ -90,8 +80,6 @@ We welcome contributions! Please see [CONTRIBUTING](CONTRIBUTING.md) to get star
 
 ## 💬 Community
 
-- [Twitter](https://twitter.com/gss_org)
-- [Slack](https://slack.gss.co)
 - [GitHub Discussions](https://github.com/gss-org/gss/discussions)
 
 ## 📃 License
