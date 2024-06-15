@@ -1,0 +1,373 @@
+cluster_name: {{cluster_name_on_cloud}}
+
+# The maximum number of workers nodes to launch in addition to the head
+# node.
+max_workers: {{num_nodes - 1}}
+upscaling_speed: {{num_nodes - 1}}
+idle_timeout_minutes: 60
+
+
+# Kubernetes resources that need to be configured for the autoscaler to be
+# able to manage the Ray cluster. If any of the provided resources don't
+# exist, the autoscaler will attempt to create them. If this fails, you may
+# not have the required permissions and will have to request them to be
+# created by your cluster administrator.
+provider:
+    type: external
+    module: sky.provision.kubernetes
+
+    region: kubernetes
+
+    # The namespace to create the Ray cluster in.
+    namespace: {{k8s_namespace}}
+
+    # This should be one of KubernetesPortMode
+    port_mode: {{k8s_port_mode}}
+
+    # We use internal IPs since we set up a port-forward between the kubernetes
+    # cluster and the local machine, or directly use NodePort to reach the
+    # head node.
+    use_internal_ips: true
+
+    timeout: {{timeout}}
+
+    ssh_jump_image: {{k8s_ssh_jump_image}}
+
+    # Namespace used to host SkyPilot system components, such as fuse device
+    # manager.
+    skypilot_system_namespace: {{k8s_skypilot_system_namespace}}
+
+    # Boolean flag to indicate if the cluster requires FUSE mounting.
+    # Used to set up the necessary permissions and sidecars.
+    fuse_device_required: {{k8s_fuse_device_required}}
+
+    # ServiceAccount created by the autoscaler for the head node pod that it
+    # runs in. If this field isn't provided, the head pod config below must
+    # contain a user-created service account with the proper permissions.
+    autoscaler_service_account:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+            labels:
+                parent: skypilot
+            name: skypilot-service-account
+
+    # Role created by the autoscaler for the head node pod that it runs in.
+    # If this field isn't provided, the role referenced in
+    # autoscaler_role_binding must exist and have at least these permissions.
+    autoscaler_role:
+        kind: Role
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+            labels:
+                parent: skypilot
+            name: skypilot-service-account-role
+        # TODO(romilb): This is a very permissive role - gives all access in the
+        #  namespace. We should restrict this. For reference, this is required
+        #  for autodown and creating more SkyPilot clusters from within the pod.
+        rules:
+        - apiGroups: ["*"]
+          resources: ["*"]
+          verbs: ["*"]
+
+    # RoleBinding created by the autoscaler for the head node pod that it runs
+    # in. If this field isn't provided, the head pod config below must contain
+    # a user-created service account with the proper permissions.
+    autoscaler_role_binding:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+            labels:
+                parent: skypilot
+            name: skypilot-service-account-role-binding
+        subjects:
+        - kind: ServiceAccount
+          name: skypilot-service-account
+        roleRef:
+            kind: Role
+            name: skypilot-service-account-role
+            apiGroup: rbac.authorization.k8s.io
+
+    # Role for the skypilot-system namespace to create FUSE device manager and
+    # any other system components.
+    autoscaler_skypilot_system_role:
+        kind: Role
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+            namespace: {{k8s_skypilot_system_namespace}}
+            labels:
+                parent: skypilot
+            name: skypilot-system-service-account-role
+        rules:
+        - apiGroups: ["*"]
+          resources: ["*"]
+          verbs: ["*"]
+
+    # RoleBinding for skypilot-system namespace role
+    autoscaler_skypilot_system_role_binding:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+            namespace: {{k8s_skypilot_system_namespace}}
+            labels:
+                parent: skypilot
+            name: skypilot-system-service-account-role-binding
+        subjects:
+        - kind: ServiceAccount
+          name: skypilot-service-account
+        roleRef:
+            kind: Role
+            name: skypilot-system-service-account-role
+            apiGroup: rbac.authorization.k8s.io
+
+    # Role to access ingress services for fetching IP
+    autoscaler_ingress_role:
+        kind: Role
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+            namespace: ingress-nginx
+            name: skypilot-service-account-ingress-role
+            labels:
+                parent: skypilot
+        rules:
+            - apiGroups: [ "" ]
+              resources: [ "services" ]
+              verbs: [ "list", "get", "watch" ]
+            - apiGroups: [ "rbac.authorization.k8s.io" ]
+              resources: [ "roles", "rolebindings" ]
+              verbs: [ "get", "list", "watch", "patch" ]
+
+    # RoleBinding to access ingress services for fetching IP
+    autoscaler_ingress_role_binding:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+            namespace: ingress-nginx
+            name: skypilot-service-account-ingress-role-binding
+            labels:
+                parent: skypilot
+        subjects:
+            - kind: ServiceAccount
+              name: skypilot-service-account
+        roleRef:
+            kind: Role
+            name: skypilot-service-account-ingress-role
+            apiGroup: rbac.authorization.k8s.io
+
+    # In addition to a role binding, we also need a cluster role binding to give
+    # the SkyPilot access to the cluster-wide resources such as nodes to get
+    # node resources.
+    autoscaler_cluster_role:
+        kind: ClusterRole
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+            labels:
+                parent: skypilot
+            name: skypilot-service-account-cluster-role
+        rules:
+        - apiGroups: [ "" ]
+          resources: [ "nodes" ]  # Required for getting node resources.
+          verbs: [ "get", "list", "watch" ]
+        - apiGroups: [ "" ]
+          resources: [ "namespaces" ]  # Required for creating skypilot-system namespace, which hosts fuse device manager.
+          verbs: [ "get", "list", "watch", "create" ]
+        - apiGroups: [ "rbac.authorization.k8s.io" ]
+          resources: [ "clusterroles", "clusterrolebindings" ]  # Required for launching more SkyPilot clusters from within the pod.
+          verbs: [ "get", "list", "watch", "create", "update", "patch", "delete" ]
+        - apiGroups: [ "node.k8s.io" ]
+          resources: [ "runtimeclasses" ]   # Required for autodetecting the runtime class of the nodes.
+          verbs: [ "get", "list", "watch" ]
+        - apiGroups: [ "networking.k8s.io" ]   # Required for exposing services.
+          resources: [ "ingressclasses" ]
+          verbs: [ "get", "list", "watch" ]
+
+    # Bind cluster role to the service account
+    autoscaler_cluster_role_binding:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+            labels:
+                parent: skypilot
+            name: skypilot-service-account-cluster-role-binding
+        subjects:
+        - kind: ServiceAccount
+          name: skypilot-service-account
+        roleRef:
+            kind: ClusterRole
+            name: skypilot-service-account-cluster-role
+            apiGroup: rbac.authorization.k8s.io
+
+    services:
+      # Service to expose the head node pod's SSH port.
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          labels:
+            parent: skypilot
+            skypilot-cluster: {{cluster_name_on_cloud}}
+            skypilot-user: {{ user }}
+          name: {{cluster_name_on_cloud}}-head-ssh
+        spec:
+          selector:
+            component: {{cluster_name_on_cloud}}-head
+          ports:
+            - protocol: TCP
+              port: 22
+              targetPort: 22
+      # Service that maps to the head node of the Ray cluster.
+      - apiVersion: v1
+        kind: Service
+        metadata:
+            labels:
+              parent: skypilot
+              skypilot-cluster: {{cluster_name_on_cloud}}
+              skypilot-user: {{ user }}
+            # NOTE: If you're running multiple Ray clusters with services
+            # on one Kubernetes cluster, they must have unique service
+            # names.
+            name: {{cluster_name_on_cloud}}-head
+        spec:
+            # This selector must match the head node pod's selector below.
+            selector:
+                component: {{cluster_name_on_cloud}}-head
+            ports:
+                - name: client
+                  protocol: TCP
+                  port: 10001
+                  targetPort: 10001
+                - name: dashboard
+                  protocol: TCP
+                  port: 8265
+                  targetPort: 8265
+
+# Specify the pod type for the ray head node (as configured below).
+head_node_type: ray_head_default
+# Specify the allowed pod types for this ray cluster and the resources they provide.
+available_node_types:
+  ray_head_default:
+    node_config:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        # name will be filled in the provisioner
+        # head node name will be {{cluster_name_on_cloud}}-head, which will match the head node service selector above if a head node
+        # service is required.
+        labels:
+            parent: skypilot
+            # component will be set for the head node pod to be the same as the head node service selector above if a 
+            skypilot-cluster: {{cluster_name_on_cloud}}
+            # Identifies the SSH jump pod used by this pod. Used in life cycle management of the ssh jump pod.
+            skypilot-ssh-jump: {{k8s_ssh_jump_name}}
+            skypilot-user: {{ user }}
+            # Custom tags for the pods
+            {%- for label_key, label_value in labels.items() %}
+            {{ label_key }}: {{ label_value }}
+            {%- endfor %}
+        {% if k8s_fuse_device_required %}
+        annotations:
+            # Required for FUSE mounting to access /dev/fuse
+            container.apparmor.security.beta.kubernetes.io/ray-node: unconfined
+        {% endif %}
+      spec:
+        # serviceAccountName: skypilot-service-account
+        serviceAccountName: {{k8s_service_account_name}}
+        automountServiceAccountToken: {{k8s_automount_sa_token}}
+
+        restartPolicy: Never
+
+        # Add node selector if GPUs are requested:
+        {% if k8s_acc_label_key is not none and k8s_acc_label_value is not none %}
+        nodeSelector:
+            {{k8s_acc_label_key}}: {{k8s_acc_label_value}}
+        {% endif %}
+
+        # This volume allocates shared memory for Ray to use for its plasma
+        # object store. If you do not provide this, Ray will fall back to
+        # /tmp which cause slowdowns if is not a shared memory volume.
+        volumes:
+        - name: secret-volume
+          secret:
+            secretName: {{k8s_ssh_key_secret_name}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: dev-fuse    # Required for fuse mounting
+          hostPath:
+            path: /dev/fuse
+        containers:
+        - name: ray-node
+          imagePullPolicy: IfNotPresent
+          image: {{image_id}}
+          # Do not change this command - it keeps the pod alive until it is
+          # explicitly killed.
+          command: ["/bin/bash", "-c", "--"]
+          args: ['trap : TERM INT; sleep infinity & wait;']
+          ports:
+          - containerPort: 22  # Used for SSH
+          - containerPort: {{ray_port}}  # Redis port
+          - containerPort: 10001  # Used by Ray Client
+          - containerPort: {{ray_dashboard_port}}  # Used by Ray Dashboard
+
+          # This volume allocates shared memory for Ray to use for its plasma
+          # object store. If you do not provide this, Ray will fall back to
+          # /tmp which cause slowdowns if is not a shared memory volume.
+          volumeMounts:
+          - name: secret-volume
+            readOnly: true
+            mountPath: "/etc/secret-volume"
+          # This volume allocates shared memory for Ray to use for its plasma
+          # object store. If you do not provide this, Ray will fall back to
+          # /tmp which cause slowdowns if is not a shared memory volume.
+          - mountPath: /dev/shm
+            name: dshm
+          {% if k8s_fuse_device_required %}
+          securityContext:
+            capabilities:
+              add:
+                - "SYS_ADMIN"
+          {% endif %}
+          resources:
+            requests:
+              cpu: {{cpus}}
+              memory: {{memory}}G
+              nvidia.com/gpu: {{accelerator_count}}
+              {% if k8s_fuse_device_required %}
+              # Kubernetes resource exposed by the fuse device manager
+              # https://gitlab.com/arm-research/smarter/smarter-device-manager
+              smarter-devices/fuse: "1"
+              {% endif %}
+            limits:
+              nvidia.com/gpu: {{accelerator_count}} # Limits need to be defined for GPU requests
+              {% if k8s_fuse_device_required %}
+              smarter-devices/fuse: "1"
+              {% endif %}
+
+setup_commands:
+  # Disable `unattended-upgrades` to prevent apt-get from hanging. It should be called at the beginning before the process started to avoid being blocked. (This is a temporary fix.)
+  # Create ~/.ssh/config file in case the file does not exist in the image.
+  # Line 'sudo bash ..': set the ulimit as suggested by ray docs for performance. https://docs.ray.io/en/latest/cluster/vms/user-guides/large-cluster-best-practices.html#system-configuration
+  # Line 'sudo grep ..': set the number of threads per process to unlimited to avoid ray job submit stucking issue when the number of running ray jobs increase.
+  # Line 'mkdir -p ..': disable host key check
+  # Line 'python3 -c ..': patch the buggy ray files and enable `-o allow_other` option for `goofys`
+  - sudo DEBIAN_FRONTEND=noninteractive apt install gcc patch pciutils rsync fuse curl -y;
+    mkdir -p ~/.ssh; touch ~/.ssh/config;
+    {{ conda_installation_commands }}
+    {{ ray_skypilot_installation_commands }}
+    sudo touch ~/.sudo_as_admin_successful;
+    sudo bash -c 'rm -rf /etc/security/limits.d; echo "* soft nofile 1048576" >> /etc/security/limits.conf; echo "* hard nofile 1048576" >> /etc/security/limits.conf';
+    sudo grep -e '^DefaultTasksMax' /etc/systemd/system.conf || (sudo bash -c 'echo "DefaultTasksMax=infinity" >> /etc/systemd/system.conf'); sudo systemctl set-property user-$(id -u $(whoami)).slice TasksMax=infinity; sudo systemctl daemon-reload;
+    mkdir -p ~/.ssh; (grep -Pzo -q "Host \*\n  StrictHostKeyChecking no" ~/.ssh/config) || printf "Host *\n  StrictHostKeyChecking no\n" >> ~/.ssh/config;
+    [ -f /etc/fuse.conf ] && sudo sed -i 's/#user_allow_other/user_allow_other/g' /etc/fuse.conf || (sudo sh -c 'echo "user_allow_other" > /etc/fuse.conf'); # This is needed for `-o allow_other` option for `goofys`;
+
+# Format: `REMOTE_PATH : LOCAL_PATH`
+file_mounts: {
+  "{{sky_ray_yaml_remote_path}}": "{{sky_ray_yaml_local_path}}",
+  "{{sky_remote_path}}/{{sky_wheel_hash}}": "{{sky_local_path}}",
+{%- for remote_path, local_path in credentials.items() %}
+  "{{remote_path}}": "{{local_path}}",
+{%- endfor %}
+}
+
+auth:
+  ssh_user: sky
+  ssh_private_key: {{ssh_private_key}}
