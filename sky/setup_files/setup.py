@@ -1,18 +1,3 @@
-"""SkyPilot.
-
-SkyPilot is a framework for easily running machine learning* workloads on any
-cloud through a unified interface. No knowledge of cloud offerings is required
-or expected – you simply define the workload and its resource requirements, and
-SkyPilot will automatically execute it on AWS, Google Cloud Platform or
-Microsoft Azure.
-
-*: SkyPilot is primarily targeted at machine learning workloads, but it can
-also support many general workloads. We're excited to hear about your use case
-and would love to hear more about how we can better support your requirements -
-please join us in [this
-discussion](https://github.com/skypilot-org/skypilot/discussions/1016)
-"""
-
 import atexit
 import io
 import os
@@ -162,7 +147,7 @@ install_requires = [
     # <= 3.13 may encounter https://github.com/ultralytics/yolov5/issues/414
     'pyyaml > 3.13, != 5.4.*',
     'requests',
-]
+]+ aws_dependencies
 
 local_ray = [
     # Lower version of ray will cause dependency conflict for
@@ -209,23 +194,6 @@ aws_dependencies = [
 ]
 
 extras_require: Dict[str, List[str]] = {
-    'aws': aws_dependencies,
-    # TODO(zongheng): azure-cli is huge and takes a long time to install.
-    # Tracked in: https://github.com/Azure/azure-cli/issues/7387
-    # azure-identity is needed in node_provider.
-    # We need azure-identity>=1.13.0 to enable the customization of the
-    # timeout of AzureCliCredential.
-    'azure': [
-        'azure-cli>=2.31.0', 'azure-core', 'azure-identity>=1.13.0',
-        'azure-mgmt-network'
-    ] + local_ray,
-    # We need google-api-python-client>=2.69.0 to enable 'discardLocalSsd'
-    # parameter for stopping instances.
-    # Reference: https://github.com/googleapis/google-api-python-client/commit/f6e9d3869ed605b06f7cbf2e8cf2db25108506e6
-    'gcp': ['google-api-python-client>=2.69.0', 'google-cloud-storage'],
-    'ibm': [
-        'ibm-cloud-sdk-core', 'ibm-vpc', 'ibm-platform-services', 'ibm-cos-sdk'
-    ] + local_ray,
     'docker': ['docker'] + local_ray,
     'lambda': local_ray,
     'cloudflare': aws_dependencies,
@@ -265,10 +233,10 @@ setuptools.setup(
     # NOTE: this affects the package.whl wheel name. When changing this (if
     # ever), you must grep for '.whl' and change all corresponding wheel paths
     # (templates/*.j2 and wheel_utils.py).
-    name='skypilot',
+    name='gss',
     version=find_version(),
     packages=setuptools.find_packages(),
-    author='SkyPilot Team',
+    author='gss team',
     license='Apache 2.0',
     readme='README.md',
     description='SkyPilot: An intercloud broker for the clouds',
@@ -293,10 +261,4 @@ setuptools.setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
         'Topic :: System :: Distributed Computing',
     ],
-    project_urls={
-        'Homepage': 'https://github.com/skypilot-org/skypilot',
-        'Issues': 'https://github.com/skypilot-org/skypilot/issues',
-        'Discussion': 'https://github.com/skypilot-org/skypilot/discussions',
-        'Documentation': 'https://skypilot.readthedocs.io/en/latest/',
-    },
 )
