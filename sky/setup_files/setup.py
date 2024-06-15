@@ -115,6 +115,25 @@ def parse_readme(readme: str) -> str:
     return readme
 
 
+# NOTE: Change the templates/jobs-controller.yaml.j2 file if any of the
+# following packages dependencies are changed.
+aws_dependencies = [
+    # botocore does not work with urllib3>=2.0.0, according to https://github.com/boto/botocore/issues/2926
+    # We have to explicitly pin the version to optimize the time for
+    # poetry install. See https://github.com/orgs/python-poetry/discussions/7937
+    'urllib3<2',
+    # NOTE: this installs CLI V1. To use AWS SSO (e.g., `aws sso login`), users
+    # should instead use CLI V2 which is not pip-installable. See
+    # https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html.
+    'awscli>=1.27.10',
+    'botocore>=1.29.10',
+    'boto3>=1.26.1',
+    # NOTE: required by awscli. To avoid ray automatically installing
+    # the latest version.
+    'colorama < 0.4.5',
+]
+
+
 install_requires = [
     'wheel',
     'cachetools',
@@ -175,23 +194,6 @@ remote = [
     'pydantic!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
 ]
 
-# NOTE: Change the templates/jobs-controller.yaml.j2 file if any of the
-# following packages dependencies are changed.
-aws_dependencies = [
-    # botocore does not work with urllib3>=2.0.0, according to https://github.com/boto/botocore/issues/2926
-    # We have to explicitly pin the version to optimize the time for
-    # poetry install. See https://github.com/orgs/python-poetry/discussions/7937
-    'urllib3<2',
-    # NOTE: this installs CLI V1. To use AWS SSO (e.g., `aws sso login`), users
-    # should instead use CLI V2 which is not pip-installable. See
-    # https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html.
-    'awscli>=1.27.10',
-    'botocore>=1.29.10',
-    'boto3>=1.26.1',
-    # NOTE: required by awscli. To avoid ray automatically installing
-    # the latest version.
-    'colorama < 0.4.5',
-]
 
 extras_require: Dict[str, List[str]] = {
     'docker': ['docker'] + local_ray,
