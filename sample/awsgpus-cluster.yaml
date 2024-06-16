@@ -1,0 +1,62 @@
+envs:
+  # MODEL_NAME: meta-llama/Meta-Llama-3-70B-Instruct
+  MODEL_NAME: meta-llama/Meta-Llama-3-8B-Instruct
+  HF_TOKEN: # TODO: Fill with your own huggingface token, or use --env to pass.
+
+service:
+  replicas: 2
+  # An actual request for readiness probe.
+  readiness_probe:
+    path: /v1/chat/completions
+    post_data:
+      model: $MODEL_NAME
+      messages:
+        - role: user
+          content: Hello! What is your name?
+      max_tokens: 1
+
+resources:
+  accelerators: {L4:8}
+  cpus: 32+
+  use_spot: True
+  disk_size: 512  # Ensure model checkpoints can fit.
+  disk_tier: best
+  ports: 8081  # Expose to internet traffic.
+
+setup: |
+  conda activate vllm
+  if [ $? -ne 0 ]; then
+    conda create -n vllm python=3.10 -y
+    conda activate vllm
+  fi
+
+  pip install vllm==0.4.2
+  # Install Gradio for web UI.
+  pip install gradio openai
+  pip install flash-attn==2.5.9.post1
+
+
+run: |
+  conda activate vllm
+  echo 'Starting vllm api server...'
+
+  python -u -m vllm.entrypoints.openai.api_server \
+    --port 8081 \
+    --model $MODEL_NAME \
+    --trust-remote-code --tensor-parallel-size $SKYPILOT_NUM_GPUS_PER_NODE \
+    --gpu-memory-utilization 0.95 \
+    --max-num-seqs 64 \
+    2>&1 | tee api_server.log &
+
+  while ! `cat api_server.log | grep -q 'Uvicorn running on'`; do
+    echo 'Waiting for vllm api server to start...'
+    sleep 5
+  done
+
+  echo 'Starting gradio server...'
+  git clone https://github.com/vllm-project/vllm.git || true
+  python vllm/examples/gradio_openai_chatbot_webserver.py \
+    -m $MODEL_NAME \
+    --port 8811 \
+    --model-url http://localhost:8081/v1 \
+    --stop-token-ids 128009,128001
