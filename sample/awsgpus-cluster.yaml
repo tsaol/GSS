@@ -17,10 +17,9 @@ service:
 
 resources:
   cloud: aws
-  region: us-west-2
   region: us-east-1
   accelerators: {A10g}
-  cpus: 32+
+  cpus: 8+
   use_spot: True
   disk_size: 512  # Ensure model checkpoints can fit.
   disk_tier: best
