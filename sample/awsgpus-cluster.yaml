@@ -16,7 +16,10 @@ service:
       max_tokens: 1
 
 resources:
-  accelerators: {L4:8}
+  cloud: aws
+  region: us-west-2
+  region: us-east-1
+  accelerators: {A10g}
   cpus: 32+
   use_spot: True
   disk_size: 512  # Ensure model checkpoints can fit.
