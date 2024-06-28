@@ -25,62 +25,99 @@ GSS is a framework for efficient and cost-effective deployment of large language
 - **Simplified Deployment**: Launch inference endpoints with a single command and automatic scaling.
 - **Flexible Inference Modes**: Supports both real-time and offline batch inference.
 
-## 📚 Documentation
-
-- [Installation](https://gss.readthedocs.io/en/latest/getting-started/installation.html)
-- [Quickstart](https://gss.readthedocs.io/en/latest/getting-started/quickstart.html)
-- [Examples](https://github.com/gss-org/gss-examples)
-- [CLI Reference](https://gss.readthedocs.io/en/latest/reference/cli.html)
-
 ## 🛠️ Quick Start
 
 Install GSS via pip:
 
 ```bash
-pip install gss
+git clone https://github.com/tsaol/GSS.git
+cd GSS
+pip install -e . 
+
+# Install boto
+pip install boto3
+# Configure your AWS credentials
+aws configure
+
+
 ```
 
 Define your model configuration in a YAML file:
 
 ```yaml
-model:
-  name: gpt-j-6b
-  framework: transformers
+envs:
+  # MODEL_NAME: meta-llama/Meta-Llama-3-70B-Instruct
+  MODEL_NAME: meta-llama/Meta-Llama-3-8B-Instruct
+  HF_TOKEN: # TODO: Fill with your own huggingface token, or use --env to pass.
+
+service:
+  replicas: 2
+  # An actual request for readiness probe.
+  readiness_probe:
+    path: /v1/chat/completions
+    post_data:
+      model: $MODEL_NAME
+      messages:
+        - role: user
+          content: Hello! What is your name?
+      max_tokens: 1
 
 resources:
-  accelerators: A100:1
+  cloud: aws
+  region: us-east-1
+  accelerators: {A10g:1}
+  cpus: 8+
+  use_spot: True
+  disk_size: 512  # Ensure model checkpoints can fit.
+  disk_tier: best
+  ports: 8081  # Expose to internet traffic.
 
-deployment:  
-  type: endpoint
-  min_replicas: 1
-  max_replicas: 10
-  
-batching:
-  max_batch_size: 8
-  max_latency: 100  
+setup: |
+  conda activate vllm
+  if [ $? -ne 0 ]; then
+    conda create -n vllm python=3.10 -y
+    conda activate vllm
+  fi
 
-run: |  
+  pip install vllm==0.4.2
+  # Install Gradio for web UI.
+  pip install gradio openai
+  pip install flash-attn==2.5.9.post1
+
+
+run: |
+  conda activate vllm
+  echo 'Starting vllm api server...'
+
+  python -u -m vllm.entrypoints.openai.api_server \
+    --port 8081 \
+    --model $MODEL_NAME \
+    --trust-remote-code --tensor-parallel-size $SKYPILOT_NUM_GPUS_PER_NODE \
+    --gpu-memory-utilization 0.95 \
+    --max-num-seqs 64 \
+    2>&1 | tee api_server.log &
+
+  while ! `cat api_server.log | grep -q 'Uvicorn running on'`; do
+    echo 'Waiting for vllm api server to start...'
+    sleep 5
+  done2
+
+  echo 'Starting gradio server...'
+  git clone https://github.com/vllm-project/vllm.git || true
+  python vllm/examples/gradio_openai_chatbot_webserver.py \
+    -m $MODEL_NAME \
+    --port 8811 \
+    --model-url http://localhost:8081/v1 \
+    --stop-token-ids 128009,128001
   gss serve
 ```
 
 Launch the inference endpoint:
 
 ```bash
-gss launch endpoint.yaml
+#Start
+HF_TOKEN=xxx sky serve up llama3.yaml -n llama3 --env HF_TOKEN
 ```
-
-## 🌐 AWS Integration
-
-GSS seamlessly integrates with AWS, enabling you to deploy LLM inference workloads on cost-effective spot GPU instances.
-
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING](CONTRIBUTING.md) to get started.
-
-## 💬 Community
-
-- [GitHub Discussions](https://github.com/gss-org/gss/discussions)
 
 ## 📃 License
 
